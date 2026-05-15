@@ -31,5 +31,6 @@ export function useUser(id: string | null, enabled: boolean) {
     queryFn: () => getUserById(id as string),
     enabled: Boolean(id) && enabled,
     initialData: id ? () => readCachedUser(queryClient, id) : undefined,
+    refetchOnMount: (query) => query.state.data === undefined,
   })
 }

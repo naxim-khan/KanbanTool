@@ -9,7 +9,6 @@ import {
   adminRowToAuthUser,
   applyAdminUpdatePayload,
   applyAuthUpdatePayload,
-  cancelUserQueries,
   restoreUserCaches,
   snapshotUserCaches,
   syncUserAcrossCaches,
@@ -55,7 +54,6 @@ export function useUpdateMyProfile() {
       syncUserAcrossCaches(queryClient, userId, (user) =>
         applyAdminUpdatePayload(user, payload)
       )
-      void cancelUserQueries(queryClient)
       return { previous, previousAuthUser } satisfies Ctx
     },
     onError: (e: Error, _vars, context) => {

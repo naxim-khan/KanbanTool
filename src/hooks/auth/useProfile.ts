@@ -6,16 +6,13 @@ import { queryKeys } from "@/constants/query-keys"
 import { getProfile } from "@/services/auth/getProfile"
 import { useAppSelector } from "@/store/hooks"
 
-export function useProfile(alwaysFetch?: boolean) {
+export function useProfile() {
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated)
   const hasUser = useAppSelector((s) => Boolean(s.auth.user?.id))
   const hydrated = useAppSelector((s) => s.auth.hydrated)
   const sessionUser = useAppSelector((s) => s.auth.user)
 
-  const bootstrapEnabled = hydrated && isAuthenticated && !hasUser
-  const queryEnabled = alwaysFetch
-    ? hydrated && isAuthenticated
-    : bootstrapEnabled
+  const queryEnabled = hydrated && isAuthenticated && !hasUser
 
   return useQuery({
     queryKey: queryKeys.profile,

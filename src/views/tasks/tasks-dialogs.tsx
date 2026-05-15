@@ -3,6 +3,7 @@
 import { useEffect, startTransition, useState } from "react"
 import { useForm, useFormState } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+
 import { AppDialog } from "@/components/shared/app-dialog"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { UserSelect } from "@/components/shared/inputs/UserSelect"
@@ -22,10 +23,15 @@ import {
   TASK_STATUS_LABELS,
   TASK_STATUS_VALUES,
 } from "@/constants/tasks"
+import { useCreateTask } from "@/hooks/tasks/useCreateTask"
+import { useDeleteTask } from "@/hooks/tasks/useDeleteTask"
+import { useUpdateTaskEdit } from "@/hooks/tasks/useUpdateTaskEdit"
+import { useAssignableUsers } from "@/hooks/users/useAssignableUsers"
 import {
   datetimeLocalValueToIso,
   isoToDatetimeLocalValue,
 } from "@/lib/helpers/datetime-local"
+import { runOptimisticMutation } from "@/lib/helpers/run-optimistic-mutation"
 import {
   taskCreateFormSchema,
   taskEditFormSchema,
@@ -34,7 +40,6 @@ import {
 } from "@/schemas/task-form.schema"
 import type { TaskWithRelations } from "@/schemas/task-api.schema"
 import type { CreateTaskPayload } from "@/services/tasks/createTask"
-import { useAssignableUsers } from "@/hooks/users/useAssignableUsers"
 
 export type TasksDialogsProps = {
   viewTask: TaskWithRelations | null
@@ -47,15 +52,6 @@ export type TasksDialogsProps = {
   onDeleteDismiss: () => void
   createOpen: boolean
   onCreateOpenChange: (open: boolean) => void
-  onCreateSubmit: (payload: CreateTaskPayload) => Promise<void>
-  createPending: boolean
-  onEditSubmit: (
-    task: TaskWithRelations,
-    values: TaskEditFormValues
-  ) => Promise<void>
-  editPending: boolean
-  onDeleteConfirm: (id: string) => Promise<void>
-  deletePending: boolean
 }
 
 function TaskViewBody({ task }: { task: TaskWithRelations }) {
@@ -98,30 +94,23 @@ function TaskViewBody({ task }: { task: TaskWithRelations }) {
   )
 }
 
-function TaskCreateFormFields({
-  isPending,
-  assigneeUsersEnabled,
-  onSubmit,
-  onValidityChange,
+function TaskCreateForm({
+  onDone,
+  onFooterStateChange,
 }: {
-  isPending: boolean
-  assigneeUsersEnabled: boolean
-  onSubmit: (payload: CreateTaskPayload) => Promise<void>
-  onValidityChange?: (valid: boolean) => void
+  onDone: () => void
+  onFooterStateChange?: (state: { valid: boolean }) => void
 }) {
+  const create = useCreateTask()
   const [assigneeSearch, setAssigneeSearch] = useState("")
   const {
     options: assigneeOptions,
-    isPending: assigneeListPending,
-    isFetching: assigneeListFetching,
-    isError: assigneeListError,
-    error: assigneeListErr,
+    isPending: assigneeLoading,
+    isFetching: assigneeFetching,
+    isError: assigneeError,
+    error: assigneeErr,
     refetch: refetchAssignees,
-  } = useAssignableUsers(assigneeSearch, assigneeUsersEnabled)
-
-  useEffect(() => {
-    if (!assigneeUsersEnabled) setAssigneeSearch("")
-  }, [assigneeUsersEnabled])
+  } = useAssignableUsers(assigneeSearch, true)
 
   const form = useForm<TaskCreateFormValues>({
     resolver: zodResolver(taskCreateFormSchema),
@@ -140,35 +129,40 @@ function TaskCreateFormFields({
   const { isValid } = useFormState({ control: form.control })
 
   useEffect(() => {
-    onValidityChange?.(isValid)
-  }, [isValid, onValidityChange])
+    onFooterStateChange?.({ valid: isValid })
+  }, [isValid, onFooterStateChange])
 
-  const handle = form.handleSubmit(async (raw) => {
+  const assigneeFetchError = assigneeError
+    ? assigneeErr instanceof Error
+      ? assigneeErr.message
+      : "Could not load users."
+    : null
+
+  const onSubmit = form.handleSubmit((raw) => {
     const values = taskCreateFormSchema.parse(raw)
     const due = datetimeLocalValueToIso(values.dueDate)
-    await onSubmit({
+    const payload: CreateTaskPayload = {
       title: values.title,
       description: values.description || undefined,
       status: values.status,
       priority: values.priority,
       assigneeId: values.assigneeId,
       dueDate: due,
-    })
+    }
+    runOptimisticMutation(create.mutate, payload, onDone)
   })
 
   return (
-    <form id="task-create-form" className="space-y-4" onSubmit={handle}>
+    <form id="task-create-form" className="space-y-4" onSubmit={onSubmit}>
       <Input
         label="Title"
         required
-        disabled={isPending}
         error={form.formState.errors.title?.message}
         {...form.register("title")}
       />
       <Textarea
         label="Description"
         rows={3}
-        disabled={isPending}
         error={form.formState.errors.description?.message}
         {...form.register("description")}
       />
@@ -182,7 +176,6 @@ function TaskCreateFormFields({
                 shouldValidate: true,
               })
             }
-            disabled={isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -205,7 +198,6 @@ function TaskCreateFormFields({
                 shouldValidate: true,
               })
             }
-            disabled={isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -224,29 +216,20 @@ function TaskCreateFormFields({
         label="Assignee (optional)"
         value={form.watch("assigneeId") ?? ""}
         onChange={(id) =>
-          form.setValue("assigneeId", id, { shouldValidate: true, shouldDirty: true })
+          form.setValue("assigneeId", id, { shouldValidate: true })
         }
         options={assigneeOptions}
-        isLoading={assigneeListPending}
-        isFetching={assigneeListFetching}
+        isLoading={assigneeLoading}
+        isFetching={assigneeFetching}
         search={assigneeSearch}
         onSearchChange={setAssigneeSearch}
-        disabled={isPending}
         error={form.formState.errors.assigneeId?.message}
-        allowClear
-        fetchError={
-          assigneeListError
-            ? assigneeListErr instanceof Error
-              ? assigneeListErr.message
-              : "Could not load users."
-            : null
-        }
+        fetchError={assigneeFetchError}
         onRetry={() => void refetchAssignees()}
       />
       <Input
         label="Due date (optional)"
         type="datetime-local"
-        disabled={isPending}
         error={form.formState.errors.dueDate?.message}
         {...form.register("dueDate")}
       />
@@ -254,32 +237,25 @@ function TaskCreateFormFields({
   )
 }
 
-function TaskEditFormFields({
+function TaskEditForm({
   task,
-  isPending,
-  assigneeUsersEnabled,
-  onSubmit,
-  onValidityChange,
+  onDone,
+  onFooterStateChange,
 }: {
   task: TaskWithRelations
-  isPending: boolean
-  assigneeUsersEnabled: boolean
-  onSubmit: (task: TaskWithRelations, values: TaskEditFormValues) => Promise<void>
-  onValidityChange?: (valid: boolean) => void
+  onDone: () => void
+  onFooterStateChange?: (state: { valid: boolean }) => void
 }) {
+  const updateEdit = useUpdateTaskEdit()
   const [assigneeSearch, setAssigneeSearch] = useState("")
   const {
     options: assigneeOptions,
-    isPending: assigneeListPending,
-    isFetching: assigneeListFetching,
-    isError: assigneeListError,
-    error: assigneeListErr,
+    isPending: assigneeLoading,
+    isFetching: assigneeFetching,
+    isError: assigneeError,
+    error: assigneeErr,
     refetch: refetchAssignees,
-  } = useAssignableUsers(assigneeSearch, assigneeUsersEnabled)
-
-  useEffect(() => {
-    if (!assigneeUsersEnabled) setAssigneeSearch("")
-  }, [assigneeUsersEnabled])
+  } = useAssignableUsers(assigneeSearch, true)
 
   const form = useForm<TaskEditFormValues>({
     resolver: zodResolver(taskEditFormSchema),
@@ -298,10 +274,6 @@ function TaskEditFormFields({
   const { isValid } = useFormState({ control: form.control })
 
   useEffect(() => {
-    onValidityChange?.(isValid)
-  }, [isValid, onValidityChange])
-
-  useEffect(() => {
     form.reset({
       title: task.title,
       description: task.description ?? "",
@@ -313,23 +285,64 @@ function TaskEditFormFields({
     void form.trigger()
   }, [task, form])
 
-  const handle = form.handleSubmit(async (raw) => {
-    await onSubmit(task, raw)
+  useEffect(() => {
+    onFooterStateChange?.({ valid: isValid })
+  }, [isValid, onFooterStateChange])
+
+  const assigneeFetchError = assigneeError
+    ? assigneeErr instanceof Error
+      ? assigneeErr.message
+      : "Could not load users."
+    : null
+
+  const assigneeSelectedDisplay = task.assignee
+    ? {
+        id: task.assignee.id,
+        name: task.assignee.name,
+        email: task.assignee.email,
+      }
+    : null
+
+  const onSubmit = form.handleSubmit((raw) => {
+    const values = taskEditFormSchema.parse(raw)
+    const due = datetimeLocalValueToIso(values.dueDate)
+    const assigneeRaw = values.assigneeId?.trim()
+    let assigneeId: string | null | undefined
+    if (assigneeRaw) assigneeId = assigneeRaw
+    else if (task.assigneeId) assigneeId = null
+    else assigneeId = undefined
+
+    const payload = {
+      title: values.title,
+      description: values.description || null,
+      priority: values.priority,
+      assigneeId,
+      dueDate: due ?? null,
+    }
+
+    runOptimisticMutation(
+      updateEdit.mutate,
+      {
+        id: task.id,
+        previousStatus: task.status,
+        nextStatus: values.status,
+        payload,
+      },
+      onDone
+    )
   })
 
   return (
-    <form id="task-edit-form" className="space-y-4" onSubmit={handle}>
+    <form id="task-edit-form" className="space-y-4" onSubmit={onSubmit}>
       <Input
         label="Title"
         required
-        disabled={isPending}
         error={form.formState.errors.title?.message}
         {...form.register("title")}
       />
       <Textarea
         label="Description"
         rows={3}
-        disabled={isPending}
         error={form.formState.errors.description?.message}
         {...form.register("description")}
       />
@@ -343,7 +356,6 @@ function TaskEditFormFields({
                 shouldValidate: true,
               })
             }
-            disabled={isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -366,7 +378,6 @@ function TaskEditFormFields({
                 shouldValidate: true,
               })
             }
-            disabled={isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -382,42 +393,24 @@ function TaskEditFormFields({
         </div>
       </div>
       <UserSelect
-        label="Assignee (optional)"
+        label="Assignee (optional, clear to unassign)"
         value={form.watch("assigneeId") ?? ""}
         onChange={(id) =>
-          form.setValue("assigneeId", id, { shouldValidate: true, shouldDirty: true })
+          form.setValue("assigneeId", id, { shouldValidate: true })
         }
         options={assigneeOptions}
-        selectedDisplay={
-          task.assignee
-            ? {
-                id: task.assignee.id,
-                name: task.assignee.name,
-                email: task.assignee.email,
-              }
-            : null
-        }
-        isLoading={assigneeListPending}
-        isFetching={assigneeListFetching}
+        selectedDisplay={assigneeSelectedDisplay}
+        isLoading={assigneeLoading}
+        isFetching={assigneeFetching}
         search={assigneeSearch}
         onSearchChange={setAssigneeSearch}
-        disabled={isPending}
         error={form.formState.errors.assigneeId?.message}
-        allowClear
-        emptyMessage="No users found — clear search or try another name or email."
-        fetchError={
-          assigneeListError
-            ? assigneeListErr instanceof Error
-              ? assigneeListErr.message
-              : "Could not load users."
-            : null
-        }
+        fetchError={assigneeFetchError}
         onRetry={() => void refetchAssignees()}
       />
       <Input
         label="Due date (optional)"
         type="datetime-local"
-        disabled={isPending}
         error={form.formState.errors.dueDate?.message}
         {...form.register("dueDate")}
       />
@@ -425,32 +418,25 @@ function TaskEditFormFields({
   )
 }
 
-export function TasksDialogs(props: TasksDialogsProps) {
-  const {
-    viewTask,
-    resolvedViewTask,
-    onViewDismiss,
-    editTask,
-    onEditDismiss,
-    deleteTask,
-    onDeleteDismiss,
-    createOpen,
-    onCreateOpenChange,
-    onCreateSubmit,
-    createPending,
-    onEditSubmit,
-    editPending,
-    onDeleteConfirm,
-    deletePending,
-  } = props
-
-  const [createFormValid, setCreateFormValid] = useState(false)
-  const [editFormValid, setEditFormValid] = useState(false)
+export function TasksDialogs({
+  viewTask,
+  resolvedViewTask,
+  onViewDismiss,
+  editTask,
+  onEditDismiss,
+  deleteTask,
+  onDeleteDismiss,
+  createOpen,
+  onCreateOpenChange,
+}: TasksDialogsProps) {
+  const del = useDeleteTask()
+  const [taskCreateFooter, setTaskCreateFooter] = useState({ valid: false })
+  const [taskEditFooter, setTaskEditFooter] = useState({ valid: false })
 
   useEffect(() => {
     if (!createOpen) {
       startTransition(() => {
-        setCreateFormValid(false)
+        setTaskCreateFooter({ valid: false })
       })
     }
   }, [createOpen])
@@ -458,7 +444,7 @@ export function TasksDialogs(props: TasksDialogsProps) {
   useEffect(() => {
     if (!editTask) {
       startTransition(() => {
-        setEditFormValid(false)
+        setTaskEditFooter({ valid: false })
       })
     }
   }, [editTask])
@@ -466,19 +452,10 @@ export function TasksDialogs(props: TasksDialogsProps) {
   return (
     <>
       <AppDialog
-        open={Boolean(viewTask)}
-        onOpenChange={(o) => !o && onViewDismiss()}
-        title="Task details"
-        description="Read-only view."
-      >
-        {resolvedViewTask ? <TaskViewBody task={resolvedViewTask} /> : null}
-      </AppDialog>
-
-      <AppDialog
         open={createOpen}
-        onOpenChange={onCreateOpenChange}
+        onOpenChange={(o) => !o && onCreateOpenChange(false)}
         title="New task"
-        description="POST /api/tasks"
+        description="Create a task via POST /tasks."
         contentClassName="sm:max-w-lg"
         footer={
           <>
@@ -492,29 +469,35 @@ export function TasksDialogs(props: TasksDialogsProps) {
             <Button
               type="submit"
               form="task-create-form"
-              disabled={createPending || !createFormValid}
+              disabled={!taskCreateFooter.valid}
             >
-              {createPending ? "Creating…" : "Create"}
+              Create task
             </Button>
           </>
         }
       >
-        <TaskCreateFormFields
-          isPending={createPending}
-          assigneeUsersEnabled={createOpen}
-          onValidityChange={setCreateFormValid}
-          onSubmit={async (payload) => {
-            await onCreateSubmit(payload)
-            onCreateOpenChange(false)
-          }}
-        />
+        {createOpen ? (
+          <TaskCreateForm
+            onDone={() => onCreateOpenChange(false)}
+            onFooterStateChange={setTaskCreateFooter}
+          />
+        ) : null}
+      </AppDialog>
+
+      <AppDialog
+        open={Boolean(viewTask)}
+        onOpenChange={(o) => !o && onViewDismiss()}
+        title="Task details"
+        description="Read-only view (refreshed when opened)."
+      >
+        {resolvedViewTask ? <TaskViewBody task={resolvedViewTask} /> : null}
       </AppDialog>
 
       <AppDialog
         open={Boolean(editTask)}
         onOpenChange={(o) => !o && onEditDismiss()}
         title="Edit task"
-        description="PATCH /api/tasks/:id and PATCH /api/tasks/:id/status when needed."
+        description="Update fields via PATCH /tasks/:id; status changes use PATCH /tasks/:id/status."
         contentClassName="sm:max-w-lg"
         footer={
           <>
@@ -524,23 +507,18 @@ export function TasksDialogs(props: TasksDialogsProps) {
             <Button
               type="submit"
               form="task-edit-form"
-              disabled={editPending || !editFormValid}
+              disabled={!taskEditFooter.valid}
             >
-              {editPending ? "Saving…" : "Save changes"}
+              Save changes
             </Button>
           </>
         }
       >
         {editTask ? (
-          <TaskEditFormFields
+          <TaskEditForm
             task={editTask}
-            isPending={editPending}
-            assigneeUsersEnabled={Boolean(editTask)}
-            onValidityChange={setEditFormValid}
-            onSubmit={async (task, raw) => {
-              await onEditSubmit(task, raw)
-              onEditDismiss()
-            }}
+            onDone={onEditDismiss}
+            onFooterStateChange={setTaskEditFooter}
           />
         ) : null}
       </AppDialog>
@@ -551,16 +529,14 @@ export function TasksDialogs(props: TasksDialogsProps) {
         title="Delete task?"
         description={
           deleteTask
-            ? `DELETE /api/tasks/${deleteTask.id} — “${deleteTask.title}”.`
+            ? `DELETE /tasks/${deleteTask.id} for “${deleteTask.title}”. This cannot be undone.`
             : ""
         }
         confirmLabel="Delete"
         confirmVariant="destructive"
-        isConfirming={deletePending}
-        onConfirm={async () => {
+        onConfirm={() => {
           if (!deleteTask) return
-          await onDeleteConfirm(deleteTask.id)
-          onDeleteDismiss()
+          runOptimisticMutation(del.mutate, deleteTask.id, onDeleteDismiss)
         }}
       />
     </>

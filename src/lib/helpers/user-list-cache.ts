@@ -40,11 +40,6 @@ export function snapshotUserCaches(
   }
 }
 
-export function cancelUserQueries(queryClient: QueryClient): void {
-  void queryClient.cancelQueries({ queryKey: queryKeys.users.root })
-  void queryClient.cancelQueries({ queryKey: queryKeys.profile })
-}
-
 export function restoreUserCaches(
   queryClient: QueryClient,
   snapshot: UserCacheSnapshot
@@ -64,8 +59,8 @@ function updateAdminList(
   queryClient: QueryClient,
   updater: (users: AdminUserRow[]) => AdminUserRow[]
 ): void {
-  const current = queryClient.getQueryData<AdminUserRow[]>(queryKeys.users.list())
-  if (!current) return
+  const current =
+    queryClient.getQueryData<AdminUserRow[]>(queryKeys.users.list()) ?? []
   queryClient.setQueryData(queryKeys.users.list(), updater(current))
 }
 
@@ -73,10 +68,10 @@ function updateAssignableList(
   queryClient: QueryClient,
   updater: (users: AssignableUserRow[]) => AssignableUserRow[]
 ): void {
-  const current = queryClient.getQueryData<AssignableUserRow[]>(
-    queryKeys.users.assignableList()
-  )
-  if (!current) return
+  const current =
+    queryClient.getQueryData<AssignableUserRow[]>(
+      queryKeys.users.assignableList()
+    ) ?? []
   queryClient.setQueryData(queryKeys.users.assignableList(), updater(current))
 }
 

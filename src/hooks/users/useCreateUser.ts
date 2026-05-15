@@ -6,7 +6,6 @@ import { toast } from "sonner"
 import {
   adminRowToAssignable,
   buildOptimisticAdminUser,
-  cancelUserQueries,
   prependUserToAdminList,
   prependUserToAssignableList,
   replaceUserInAdminList,
@@ -36,7 +35,6 @@ export function useCreateUser() {
         queryClient,
         adminRowToAssignable(optimistic)
       )
-      void cancelUserQueries(queryClient)
       return { previous, optimisticId: optimistic.id } satisfies Ctx
     },
     onError: (e: Error, _vars, context) => {

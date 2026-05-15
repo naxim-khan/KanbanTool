@@ -37,5 +37,7 @@ export function useTask(id: string | null, enabled: boolean) {
     queryFn: () => getTask(id as string),
     enabled: Boolean(id) && enabled,
     initialData: id ? () => readCachedTask(queryClient, id) : undefined,
+    /** Detail is seeded from list cache when opening view — skip refetch if present. */
+    refetchOnMount: (query) => query.state.data === undefined,
   })
 }

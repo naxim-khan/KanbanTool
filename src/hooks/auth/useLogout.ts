@@ -3,7 +3,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 
-import { queryKeys } from "@/constants/query-keys"
 import { postLogout } from "@/services/auth/logout"
 import { clearSession } from "@/store/slices/authSlice"
 import { useAppDispatch } from "@/store/hooks"
@@ -19,7 +18,7 @@ export function useLogout() {
     onSettled: () => {
       clearStoredAuth()
       dispatch(clearSession())
-      queryClient.removeQueries({ queryKey: queryKeys.profile })
+      queryClient.clear()
       router.push("/sign-in")
     },
   })

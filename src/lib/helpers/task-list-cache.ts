@@ -6,12 +6,41 @@ import type {
   PaginatedTasksResponse,
   TaskWithRelations,
 } from "@/schemas/task-api.schema"
+import type { TasksQuery } from "@/schemas/tasks-query.schema"
 import type { AuthUser } from "@/types/auth.types"
 
 export type TaskListCacheSnapshot = Array<{
   queryKey: readonly unknown[]
   data: PaginatedTasksResponse | undefined
 }>
+
+function isTasksListQueryKey(
+  queryKey: readonly unknown[]
+): queryKey is ReturnType<typeof queryKeys.tasks.list> {
+  return (
+    queryKey.length === 3 &&
+    queryKey[0] === "tasks" &&
+    queryKey[1] === "list" &&
+    typeof queryKey[2] === "object" &&
+    queryKey[2] !== null
+  )
+}
+
+function emptyPaginatedForQuery(
+  query: TasksQuery,
+  items: TaskWithRelations[] = []
+): PaginatedTasksResponse {
+  return {
+    items,
+    total: items.length,
+    page: query.page,
+    limit: query.limit,
+    skip: (query.page - 1) * query.limit,
+    take: query.limit,
+    sortBy: query.sortBy,
+    sortOrder: query.sortOrder,
+  }
+}
 
 export function snapshotTaskLists(
   queryClient: QueryClient
@@ -39,9 +68,20 @@ export function updateAllTaskLists(
   const queries = queryClient.getQueriesData<PaginatedTasksResponse>({
     queryKey: queryKeys.tasks.listPrefix,
   })
+
+  if (queries.length === 0) return
+
   for (const [queryKey, data] of queries) {
-    if (!data) continue
-    queryClient.setQueryData(queryKey, updater(data))
+    if (data) {
+      queryClient.setQueryData(queryKey, updater(data))
+      continue
+    }
+    if (isTasksListQueryKey(queryKey)) {
+      queryClient.setQueryData(
+        queryKey,
+        updater(emptyPaginatedForQuery(queryKey[2]))
+      )
+    }
   }
 }
 
@@ -71,6 +111,30 @@ export function patchTaskInAllLists(
     items: data.items.map((t) => {
       if (t.id !== taskId) return t
       return typeof patch === "function" ? patch(t) : { ...t, ...patch }
+    }),
+  }))
+}
+
+/** Apply field + optional status patch in one list update (edit dialog). */
+export function patchTaskEditInAllLists(
+  queryClient: QueryClient,
+  taskId: string,
+  options: {
+    status?: TaskWithRelations["status"]
+    patch: (
+      task: TaskWithRelations
+    ) => TaskWithRelations
+  }
+): void {
+  updateAllTaskLists(queryClient, (data) => ({
+    ...data,
+    items: data.items.map((t) => {
+      if (t.id !== taskId) return t
+      let next = options.patch(t)
+      if (options.status !== undefined) {
+        next = { ...next, status: options.status }
+      }
+      return next
     }),
   }))
 }

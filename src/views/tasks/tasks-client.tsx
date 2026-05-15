@@ -15,22 +15,12 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { groupTasksByStatus } from "@/lib/helpers/group-tasks-by-status"
 import { TASK_KANBAN_LIST_LIMIT } from "@/constants/tasks"
-import { useCreateTask } from "@/hooks/tasks/useCreateTask"
-import { useDeleteTask } from "@/hooks/tasks/useDeleteTask"
 import { useTask } from "@/hooks/tasks/useTask"
 import { useTasks } from "@/hooks/tasks/useTasks"
 import { useTaskStatusDndMutation } from "@/hooks/tasks/useTaskStatusDndMutation"
-import { useUpdateTask } from "@/hooks/tasks/useUpdateTask"
-import { useUpdateTaskStatus } from "@/hooks/tasks/useUpdateTaskStatus"
-import { datetimeLocalValueToIso } from "@/lib/helpers/datetime-local"
 import { getTaskPermissions } from "@/lib/helpers/task-permissions"
 import { mergeTasksListQuery } from "@/lib/helpers/merge-tasks-list-query"
-import {
-  taskEditFormSchema,
-  type TaskEditFormValues,
-} from "@/schemas/task-form.schema"
 import type { TaskWithRelations } from "@/schemas/task-api.schema"
-import type { CreateTaskPayload } from "@/services/tasks/createTask"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import {
   resetTaskFilters,
@@ -90,10 +80,6 @@ export function TasksClient() {
   const resolvedViewTask = (viewDetail.data ?? viewTask) as TaskWithRelations | null
 
   const moveStatus = useTaskStatusDndMutation()
-  const createMut = useCreateTask()
-  const updateMut = useUpdateTask()
-  const updateStatusMut = useUpdateTaskStatus()
-  const deleteMut = useDeleteTask()
 
   const onViewTask = useCallback((t: TaskWithRelations) => setViewTask(t), [])
   const onEditTask = useCallback((t: TaskWithRelations) => {
@@ -120,53 +106,6 @@ export function TasksClient() {
       onDelete: onDeleteTask,
     }),
     [onViewTask, onEditTask, onDeleteTask]
-  )
-
-  const handleCreateSubmit = useCallback(
-    async (payload: CreateTaskPayload) => {
-      await createMut.mutateAsync(payload)
-    },
-    [createMut]
-  )
-
-  const handleEditSubmit = useCallback(
-    async (task: TaskWithRelations, raw: TaskEditFormValues) => {
-      const values = taskEditFormSchema.parse(raw)
-      const due = datetimeLocalValueToIso(values.dueDate)
-      const assigneeRaw = values.assigneeId?.trim()
-      let assigneeId: string | null | undefined
-      if (assigneeRaw) assigneeId = assigneeRaw
-      else if (task.assigneeId) assigneeId = null
-      else assigneeId = undefined
-
-      const runUpdate = () =>
-        updateMut.mutateAsync({
-          id: task.id,
-          payload: {
-            title: values.title,
-            description: values.description || null,
-            priority: values.priority,
-            assigneeId,
-            dueDate: due ?? null,
-          },
-        })
-
-      if (values.status !== task.status) {
-        await updateStatusMut.mutateAsync({
-          id: task.id,
-          payload: { status: values.status },
-        })
-      }
-      await runUpdate()
-    },
-    [updateMut, updateStatusMut]
-  )
-
-  const handleDeleteConfirm = useCallback(
-    async (id: string) => {
-      await deleteMut.mutateAsync(id)
-    },
-    [deleteMut]
   )
 
   const items = data?.items ?? []
@@ -338,12 +277,6 @@ export function TasksClient() {
         onDeleteDismiss={() => setDeleteTask(null)}
         createOpen={createOpen}
         onCreateOpenChange={setCreateOpen}
-        onCreateSubmit={handleCreateSubmit}
-        createPending={createMut.isPending}
-        onEditSubmit={handleEditSubmit}
-        editPending={updateMut.isPending || updateStatusMut.isPending}
-        onDeleteConfirm={handleDeleteConfirm}
-        deletePending={deleteMut.isPending}
       />
     </div>
   )

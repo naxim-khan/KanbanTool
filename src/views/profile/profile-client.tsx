@@ -238,7 +238,7 @@ export function ProfileClient() {
   const sessionUser = useAppSelector((s) => s.auth.user)
   const sessionRole = sessionUser?.role
   const isAdmin = sessionRole === "ADMIN"
-  const { data, isPending, isError, error, refetch } = useProfile(true)
+  const { data, isPending, isError, error, refetch } = useProfile()
   const displayUser = sessionUser ?? data
   const [editOpen, setEditOpen] = useState(false)
   const [editFooter, setEditFooter] = useState({ valid: false })
@@ -273,9 +273,9 @@ export function ProfileClient() {
         ) : null}
       </div>
 
-      {isPending ? (
+      {isPending && !displayUser ? (
         <PageLoader message="Loading profile…" />
-      ) : isError ? (
+      ) : isError && !displayUser ? (
         <ErrorState
           message={error instanceof Error ? error.message : "Request failed"}
           onRetry={() => void refetch()}

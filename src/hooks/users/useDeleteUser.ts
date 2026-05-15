@@ -5,7 +5,6 @@ import { toast } from "sonner"
 
 import { queryKeys } from "@/constants/query-keys"
 import {
-  cancelUserQueries,
   removeUserFromAdminList,
   removeUserFromAssignableList,
   restoreUserCaches,
@@ -25,7 +24,6 @@ export function useDeleteUser() {
       const previous = snapshotUserCaches(queryClient)
       removeUserFromAdminList(queryClient, id)
       removeUserFromAssignableList(queryClient, id)
-      void cancelUserQueries(queryClient)
       return { previous } satisfies Ctx
     },
     onError: (e: Error, _vars, context) => {
